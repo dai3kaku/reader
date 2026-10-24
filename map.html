@@ -214,7 +214,7 @@
   </div>
 
   <script>
-    const ENCRYPTED_PAYLOAD = {"salt": "tY+a7+/jcp3dDOcrWO7nTg==", "nonce": "O9kyG+uz7GlsRFLwLV6w5w==", "ciphertext": "otsITUBtiKq3MDbhux/SEj7CHqITdRs1fAwgaw7fBezKaxrmgZi9C2NxD2MiOiJZb95tXUm9uJEsbiJOqVdbUiMU68yE37HSEQIBCV9AQPwbRBuZEupcA/Kb5CXtC1RzxM/3WPGTf59d4iStIpSxYYZUkqVOLWzjyoGxFb7bG8TQ5vHlM9se3/g69V6SwAYgcKqc1TdGAK7yot4nXnLz7s5DxiAvtXQUKq8mGi3B3wj4OhQ9xwZN90n/pNnKNzOLD8VMn4N4iwAB7a3jL5sZWC7O9FW7vPe8CmBy1q4C66esph6wq8i+hYhLOxqR+lCwkl94dfhP0EuVBeUZ+GhftRD288hZvXP1ptoM1yYppJgozYjeFTCE6dNoETFEprWHI1Jy2oI0a+UzlHv+3FZwwQfjos0D+rAK4VwYDfsDuS9vxpqnxkxjhnlsRl/YvUfdeBzjDK5QAePqAkIvXcqZbezDMRYBOCU1CWhthz0zHND6qRldMPZcOFcooxHyJ2qW", "tag": "tvyq7d9DY+Z+F8Gkq2oz35lpKrEsspwVpj7x1fsU5mA="};
+    const ENCRYPTED_PAYLOAD = {"salt": "bwGdLWGKaQ5EjK9AgKfu0w==", "nonce": "kjdGXFYx71QAAvAATSezJw==", "ciphertext": "qPAey7lR/j/DKGiQZjedxewEGF0kHFv+bNm1I3YBQ6LVGKEc0yk9eZMeGq/O3GHS15AeqBH8DolvstgT2tKZuyYrKu0qbV4OcH1uX505P7g0AAGm/DwiXIyyLbppGjvtJgpYgxk0an37QlT03NiByADmzb7PDqdGSAbhz0r0d62cQa/qkQugUeXUApE10J5BUTYBQ4E+MCLBH0XG6L4WeA8k8XM/btcXUwHTbjSHYqJr0HesV4XDPplvkcjA5ZrfD4HfC/J5oZTW+gICNmk9B5NkAcMckfd1ufiBaTMn7j+XLd50SZBebVffCCIDWNnp2fd8XJyLb9JhVYveNoiJ9P/Zv6mq6kIi2/V4ROB65bDNUgxWOENUc6cOC5UmFfKtgjzIwyS0n83e/2AMxJx+haM/nJVRfLVf5lR101iWOdcaB+tU2L2On6uFEeegV/DY3MIzuT1jMmbU9cdFDU9BmHpAkgEkkNKWEo0a1PJIa8GktxrpfF2oB0IfwULFU0WG", "tag": "qliE2qV8C51svCDR7GQ5ohHqAsqutHebgO/DJ6jwlgI="};
 
     // -------------------------------------------------------------
     // Pure JS SHA-256 CTR + PBKDF2 + HMAC 復号エンジン
@@ -417,119 +417,233 @@
       }
     }
 
-    // 1. 縦ツリーレイアウト（スマホ縦1画面に最適化）
+    // 1. 縦ツリーレイアウト（上から下へ1行1ノードのL字接続ツリー・横重なり100%ゼロ）
     function renderVerticalTree(svg, root) {
       const container = document.getElementById("canvas-container");
       const W = container.clientWidth || 360;
       const H = container.clientHeight || 640;
 
-      // 階層ごとのフラット化とY座標配置
-      const levels = [];
-      function traverse(node, depth) {
-        if (!levels[depth]) levels[depth] = [];
-        levels[depth].push(node);
-        if (node.children) node.children.forEach(c => traverse(c, depth + 1));
-      }
-      traverse(root, 0);
-
-      const maxDepth = levels.length;
-      const rowHeight = (H - 40) / Math.max(maxDepth, 3);
-
       svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
 
-      // 座標割り当て
-      levels.forEach((nodesInLevel, depth) => {
-        const y = 30 + depth * rowHeight + rowHeight / 2;
-        const count = nodesInLevel.length;
-        nodesInLevel.forEach((node, idx) => {
-          node.y = y;
-          node.x = (W / (count + 1)) * (idx + 1);
-          node.depth = depth;
-        });
-      });
-
-      // リンク描画 (ベジェ曲線)
-      function drawLinks(node) {
-        if (!node.children) return;
-        node.children.forEach(child => {
-          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-          const midY = (node.y + child.y) / 2;
-          const d = `M ${node.x} ${node.y + 16} C ${node.x} ${midY}, ${child.x} ${midY}, ${child.x} ${child.y - 16}`;
-          path.setAttribute("d", d);
-          path.setAttribute("class", "link-path");
-          svg.appendChild(path);
-          drawLinks(child);
-        });
+      // 深さ優先（DFS）でフラットな行リストを作成
+      const rows = [];
+      function flattenDFS(node, depth, parent) {
+        node.depth = depth;
+        node.parent = parent;
+        rows.push(node);
+        if (node.children) {
+          node.children.forEach(c => flattenDFS(c, depth + 1, node));
+        }
       }
-      drawLinks(root);
+      flattenDFS(root, 0, null);
 
-      // ノード描画
-      function drawNodes(node) {
+      const totalRows = rows.length;
+      const topPad = 24;
+      const bottomPad = 24;
+      const usableH = H - topPad - bottomPad;
+      const rowStep = Math.min(Math.max(usableH / Math.max(totalRows, 1), 44), 76);
+      const startY = (H - rowStep * (totalRows - 1)) / 2;
+
+      const linkLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      const nodeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      svg.appendChild(linkLayer);
+      svg.appendChild(nodeLayer);
+
+      // 先に全ノードを描画して getBBox() で正確な実測サイズを取得・配置
+      rows.forEach((node, idx) => {
+        node.y = startY + idx * rowStep;
+
         const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
         const depthClass = node.depth === 0 ? "node-root" : (node.depth === 1 ? "node-l1" : "node-l2");
         g.setAttribute("class", `node-group ${depthClass}`);
 
-        const paddingX = node.depth === 0 ? 18 : 12;
-        const paddingY = node.depth === 0 ? 10 : 7;
-        const fontSize = node.depth === 0 ? 15 : (node.depth === 1 ? 13 : 11.5);
-        const estWidth = Math.max(node.text.length * (fontSize * 0.9) + paddingX * 2, 70);
-        const estHeight = fontSize + paddingY * 2;
+        const paddingX = node.depth === 0 ? 18 : 14;
+        const paddingY = node.depth === 0 ? 10 : 8;
 
         const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        rect.setAttribute("x", node.x - estWidth / 2);
-        rect.setAttribute("y", node.y - estHeight / 2);
-        rect.setAttribute("width", estWidth);
-        rect.setAttribute("height", estHeight);
         rect.setAttribute("class", "node-bg");
 
         const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        text.setAttribute("x", node.x);
-        text.setAttribute("y", node.y);
         text.setAttribute("class", "node-text");
         text.textContent = node.text;
 
         g.appendChild(rect);
         g.appendChild(text);
-        svg.appendChild(g);
+        nodeLayer.appendChild(g);
 
-        if (node.children) node.children.forEach(drawNodes);
-      }
-      drawNodes(root);
+        // 実測サイズ取得
+        const bbox = text.getBBox();
+        const boxW = Math.max(bbox.width + paddingX * 2, 80);
+        const boxH = Math.max(bbox.height + paddingY * 2, 34);
+        node.boxW = boxW;
+        node.boxH = boxH;
+
+        // 左端からのインデント配置（画面右端からはみ出さないようクランプ）
+        const indentBase = 24 + node.depth * 36;
+        const leftX = Math.min(indentBase, Math.max(12, W - boxW - 16));
+        const centerX = leftX + boxW / 2;
+        node.leftX = leftX;
+        node.x = centerX;
+
+        rect.setAttribute("x", leftX);
+        rect.setAttribute("y", node.y - boxH / 2);
+        rect.setAttribute("width", boxW);
+        rect.setAttribute("height", boxH);
+
+        text.setAttribute("x", centerX);
+        text.setAttribute("y", node.y);
+      });
+
+      // 親から子への滑らかなL字エルボー接続線を描画
+      rows.forEach(node => {
+        if (!node.parent) return;
+        const p = node.parent;
+        const startX = p.leftX + 18;
+        const startYPos = p.y + p.boxH / 2;
+        const endX = node.leftX;
+        const endYPos = node.y;
+
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        const r = Math.min(12, Math.abs(endYPos - startYPos) / 2, Math.abs(endX - startX));
+        const d = `M ${startX} ${startYPos} L ${startX} ${endYPos - r} Q ${startX} ${endYPos} ${startX + r} ${endYPos} L ${endX} ${endYPos}`;
+        path.setAttribute("d", d);
+        path.setAttribute("class", "link-path");
+        linkLayer.appendChild(path);
+      });
     }
 
-    // 2. 放射状マインドマップレイアウト（中心から円形展開）
+    // 2. 放射状マインドマップレイアウト（縦長楕円配置＋Y座標衝突反発＋画面端クランプ補正）
     function renderRadialMap(svg, root) {
       const container = document.getElementById("canvas-container");
       const W = container.clientWidth || 360;
       const H = container.clientHeight || 640;
       const centerX = W / 2;
       const centerY = H / 2;
-      const radiusBase = Math.min(W, H) * 0.38;
 
       svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
 
+      const linkLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      const nodeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      svg.appendChild(linkLayer);
+      svg.appendChild(nodeLayer);
+
+      // 全ノード収集＆初期角度計算（スマホ縦画面に合わせ上下長軸の楕円展開）
+      const allNodes = [];
       root.x = centerX;
       root.y = centerY;
       root.depth = 0;
+      allNodes.push(root);
 
       const l1Children = root.children || [];
       const l1Count = l1Children.length;
+      const rx1 = Math.min(W * 0.28, 110);
+      const ry1 = Math.min(H * 0.22, 145);
+      const rx2 = Math.min(W * 0.36, 140);
+      const ry2 = Math.min(H * 0.38, 250);
 
       l1Children.forEach((child, i) => {
-        const angle = (2 * Math.PI / l1Count) * i - Math.PI / 2;
-        child.x = centerX + Math.cos(angle) * (radiusBase * 0.65);
-        child.y = centerY + Math.sin(angle) * (radiusBase * 0.65);
+        const angle = (2 * Math.PI / Math.max(l1Count, 1)) * i - Math.PI / 2;
+        child.x = centerX + Math.cos(angle) * rx1;
+        child.y = centerY + Math.sin(angle) * ry1;
         child.depth = 1;
+        allNodes.push(child);
 
         const l2Children = child.children || [];
         const l2Count = l2Children.length;
         l2Children.forEach((l2Child, j) => {
-          const subSpread = 0.5; // 分散角
-          const subAngle = angle + (l2Count > 1 ? (j - (l2Count - 1) / 2) * subSpread : 0);
-          l2Child.x = child.x + Math.cos(subAngle) * (radiusBase * 0.55);
-          l2Child.y = child.y + Math.sin(subAngle) * (radiusBase * 0.55);
+          const spread = 0.55;
+          const subAngle = angle + (l2Count > 1 ? (j - (l2Count - 1) / 2) * spread : 0);
+          l2Child.x = centerX + Math.cos(subAngle) * rx2;
+          l2Child.y = centerY + Math.sin(subAngle) * ry2;
           l2Child.depth = 2;
+          // 同一親の子が近い高さで重ならないようYオフセット付与
+          if (l2Count > 1) {
+            l2Child.y += (j - (l2Count - 1) / 2) * 44;
+          }
+          allNodes.push(l2Child);
         });
+      });
+
+      // 先にDOM生成して getBBox() で実測サイズを取得
+      allNodes.forEach(node => {
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        const depthClass = node.depth === 0 ? "node-root" : (node.depth === 1 ? "node-l1" : "node-l2");
+        g.setAttribute("class", `node-group ${depthClass}`);
+
+        const paddingX = node.depth === 0 ? 16 : 12;
+        const paddingY = node.depth === 0 ? 9 : 7;
+
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("class", "node-bg");
+
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("class", "node-text");
+        text.textContent = node.text;
+
+        g.appendChild(rect);
+        g.appendChild(text);
+        nodeLayer.appendChild(g);
+
+        const bbox = text.getBBox();
+        node.boxW = Math.max(bbox.width + paddingX * 2, 68);
+        node.boxH = Math.max(bbox.height + paddingY * 2, 32);
+        node.rectEl = rect;
+        node.textEl = text;
+      });
+
+      // 衝突反発＆画面端はみ出し防止（Clamp）補正（反復ソルバー）
+      const marginX = 12;
+      const marginY = 20;
+      for (let iter = 0; iter < 30; iter++) {
+        // 1. 画面端クランプ
+        allNodes.forEach(n => {
+          if (n.depth === 0) return;
+          const minX = n.boxW / 2 + marginX;
+          const maxX = W - n.boxW / 2 - marginX;
+          const minY = n.boxH / 2 + marginY;
+          const maxY = H - n.boxH / 2 - marginY;
+          n.x = Math.max(minX, Math.min(maxX, n.x));
+          n.y = Math.max(minY, Math.min(maxY, n.y));
+        });
+
+        // 2. ノード間の重なり反発（AABB衝突解消）
+        for (let i = 0; i < allNodes.length; i++) {
+          for (let j = i + 1; j < allNodes.length; j++) {
+            const a = allNodes[i];
+            const b = allNodes[j];
+            const overlapX = (a.boxW / 2 + b.boxW / 2 + 8) - Math.abs(a.x - b.x);
+            const overlapY = (a.boxH / 2 + b.boxH / 2 + 10) - Math.abs(a.y - b.y);
+            if (overlapX > 0 && overlapY > 0) {
+              // 縦方向に逃がすのを優先（スマホ縦長画面のため）
+              const pushY = (overlapY / 2) + 2;
+              if (a.y <= b.y) {
+                if (a.depth !== 0) a.y -= pushY;
+                if (b.depth !== 0) b.y += pushY;
+              } else {
+                if (a.depth !== 0) a.y += pushY;
+                if (b.depth !== 0) b.y -= pushY;
+              }
+            }
+          }
+        }
+      }
+
+      // 最終クランプ＆座標反映
+      allNodes.forEach(n => {
+        const minX = n.boxW / 2 + marginX;
+        const maxX = W - n.boxW / 2 - marginX;
+        const minY = n.boxH / 2 + marginY;
+        const maxY = H - n.boxH / 2 - marginY;
+        n.x = Math.max(minX, Math.min(maxX, n.x));
+        n.y = Math.max(minY, Math.min(maxY, n.y));
+
+        n.rectEl.setAttribute("x", n.x - n.boxW / 2);
+        n.rectEl.setAttribute("y", n.y - n.boxH / 2);
+        n.rectEl.setAttribute("width", n.boxW);
+        n.rectEl.setAttribute("height", n.boxH);
+
+        n.textEl.setAttribute("x", n.x);
+        n.textEl.setAttribute("y", n.y);
       });
 
       // リンク描画
@@ -537,45 +651,15 @@
         if (!node.children) return;
         node.children.forEach(child => {
           const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-          const d = `M ${node.x} ${node.y} Q ${ (node.x + child.x) / 2 } ${ (node.y + child.y) / 2 }, ${child.x} ${child.y}`;
+          const midY = (node.y + child.y) / 2;
+          const d = `M ${node.x} ${node.y} C ${node.x} ${midY}, ${child.x} ${midY}, ${child.x} ${child.y}`;
           path.setAttribute("d", d);
           path.setAttribute("class", "link-path");
-          svg.appendChild(path);
+          linkLayer.appendChild(path);
           drawRadialLinks(child);
         });
       }
       drawRadialLinks(root);
-
-      // ノード描画
-      function drawRadialNodes(node) {
-        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-        const depthClass = node.depth === 0 ? "node-root" : (node.depth === 1 ? "node-l1" : "node-l2");
-        g.setAttribute("class", `node-group ${depthClass}`);
-
-        const fontSize = node.depth === 0 ? 14 : (node.depth === 1 ? 12 : 10.5);
-        const estWidth = node.text.length * (fontSize * 0.85) + 16;
-        const estHeight = fontSize + 12;
-
-        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        rect.setAttribute("x", node.x - estWidth / 2);
-        rect.setAttribute("y", node.y - estHeight / 2);
-        rect.setAttribute("width", estWidth);
-        rect.setAttribute("height", estHeight);
-        rect.setAttribute("class", "node-bg");
-
-        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        text.setAttribute("x", node.x);
-        text.setAttribute("y", node.y);
-        text.setAttribute("class", "node-text");
-        text.textContent = node.text;
-
-        g.appendChild(rect);
-        g.appendChild(text);
-        svg.appendChild(g);
-
-        if (node.children) node.children.forEach(drawRadialNodes);
-      }
-      drawRadialNodes(root);
     }
 
     window.addEventListener("DOMContentLoaded", init);
