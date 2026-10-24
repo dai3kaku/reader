@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>2次元思考マップ</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0b0f19">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      overflow: hidden;
+      background: #0b0f19;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Hiragino Sans", "Meiryo", sans-serif;
+    }
+    #app {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    /* Top Bar */
+    header {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      padding-top: env(safe-area-inset-top, 0px);
+      z-index: 50;
+      background: linear-gradient(180deg, rgba(11, 15, 25, 0.9) 0%, rgba(11, 15, 25, 0) 100%);
+      pointer-events: none;
+    }
+    .title-badge {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      text-transform: uppercase;
+    }
+    .view-toggle-btn {
+      pointer-events: auto;
+      background: rgba(30, 41, 59, 0.8);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #e2e8f0;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      transition: all 0.2s ease;
+    }
+    .view-toggle-btn:active {
+      transform: scale(0.94);
+      background: rgba(51, 65, 85, 0.9);
+    }
+    /* Viewport Area */
+    #canvas-container {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 56px 12px 20px 12px;
+      padding-top: calc(52px + env(safe-area-inset-top, 0px));
+      padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    }
+    svg {
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
+      touch-action: none;
+    }
+    /* Node & Link Styles */
+    .link-path {
+      fill: none;
+      stroke: #334155;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.3s ease;
+    }
+    .node-group {
+      cursor: default;
+    }
+    .node-bg {
+      fill: #1e293b;
+      stroke: #475569;
+      stroke-width: 1.5;
+      rx: 12px;
+      filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.35));
+      transition: all 0.2s ease;
+    }
+    .node-root .node-bg {
+      fill: #0284c7;
+      stroke: #38bdf8;
+      stroke-width: 2;
+      rx: 16px;
+    }
+    .node-l1 .node-bg {
+      fill: #1e293b;
+      stroke: #38bdf8;
+      stroke-width: 1.8;
+    }
+    .node-text {
+      fill: #f8fafc;
+      font-weight: 600;
+      text-anchor: middle;
+      dominant-baseline: central;
+      pointer-events: none;
+    }
+    .node-root .node-text {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .node-l1 .node-text {
+      font-size: 13.5px;
+    }
+    .node-l2 .node-text {
+      font-size: 12px;
+      font-weight: 500;
+      fill: #cbd5e1;
+    }
+    /* Lock Screen */
+    #lock-screen {
+      position: absolute;
+      inset: 0;
+      background: #0b0f19;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 100;
+      text-align: center;
+    }
+    .lock-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.8;
+    }
+    .lock-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #e2e8f0;
+      margin-bottom: 8px;
+    }
+    .lock-desc {
+      font-size: 13px;
+      color: #64748b;
+      line-height: 1.6;
+      max-width: 280px;
+    }
+    .error-text {
+      color: #f87171;
+      font-size: 12px;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="lock-screen">
+      <div class="lock-icon">🔒</div>
+      <div class="lock-title">Private Thought Map</div>
+      <div class="lock-desc">
+        本ビューアーは完全暗号化されています。<br>URLに復号キー（#key=...）が必要です。
+      </div>
+      <div id="lock-error" class="error-text"></div>
+    </div>
+
+    <header>
+      <div class="title-badge">
+        <span>⚡</span> <span>Thought Map</span>
+      </div>
+      <button id="view-toggle" class="view-toggle-btn">
+        <span id="toggle-icon">🌿</span>
+        <span id="toggle-label">縦ツリー</span>
+      </button>
+    </header>
+
+    <div id="canvas-container">
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </div>
+
+  <script>
+    const ENCRYPTED_PAYLOAD = {"salt": "tY+a7+/jcp3dDOcrWO7nTg==", "nonce": "O9kyG+uz7GlsRFLwLV6w5w==", "ciphertext": "otsITUBtiKq3MDbhux/SEj7CHqITdRs1fAwgaw7fBezKaxrmgZi9C2NxD2MiOiJZb95tXUm9uJEsbiJOqVdbUiMU68yE37HSEQIBCV9AQPwbRBuZEupcA/Kb5CXtC1RzxM/3WPGTf59d4iStIpSxYYZUkqVOLWzjyoGxFb7bG8TQ5vHlM9se3/g69V6SwAYgcKqc1TdGAK7yot4nXnLz7s5DxiAvtXQUKq8mGi3B3wj4OhQ9xwZN90n/pNnKNzOLD8VMn4N4iwAB7a3jL5sZWC7O9FW7vPe8CmBy1q4C66esph6wq8i+hYhLOxqR+lCwkl94dfhP0EuVBeUZ+GhftRD288hZvXP1ptoM1yYppJgozYjeFTCE6dNoETFEprWHI1Jy2oI0a+UzlHv+3FZwwQfjos0D+rAK4VwYDfsDuS9vxpqnxkxjhnlsRl/YvUfdeBzjDK5QAePqAkIvXcqZbezDMRYBOCU1CWhthz0zHND6qRldMPZcOFcooxHyJ2qW", "tag": "tvyq7d9DY+Z+F8Gkq2oz35lpKrEsspwVpj7x1fsU5mA="};
+
+    // -------------------------------------------------------------
+    // Pure JS SHA-256 CTR + PBKDF2 + HMAC 復号エンジン
+    // -------------------------------------------------------------
+    function b64ToBuf(b64) {
+      const bin = atob(b64);
+      const buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      return buf;
+    }
+
+    // SHA-256 実装
+    function sha256Sync(bytes) {
+      function rotr(n, x) { return (x >>> n) | (x << (32 - n)); }
+      function ch(x, y, z) { return (x & y) ^ (~x & z); }
+      function maj(x, y, z) { return (x & y) ^ (x & z) ^ (y & z); }
+      function sigma0(x) { return rotr(2, x) ^ rotr(13, x) ^ rotr(22, x); }
+      function sigma1(x) { return rotr(6, x) ^ rotr(11, x) ^ rotr(25, x); }
+      function gamma0(x) { return rotr(7, x) ^ rotr(18, x) ^ (x >>> 3); }
+      function gamma1(x) { return rotr(17, x) ^ rotr(19, x) ^ (x >>> 10); }
+
+      const K = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+      ];
+
+      let H = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+      ];
+
+      const l = bytes.length;
+      const bitLen = l * 8;
+      const padLen = (l % 64 < 56) ? (56 - (l % 64)) : (120 - (l % 64));
+      const totalLen = l + padLen + 8;
+      const msg = new Uint8Array(totalLen);
+      msg.set(bytes);
+      msg[l] = 0x80;
+      const view = new DataView(msg.buffer);
+      view.setUint32(totalLen - 4, bitLen, false);
+
+      const W = new Uint32Array(64);
+      for (let i = 0; i < totalLen; i += 64) {
+        for (let t = 0; t < 16; t++) W[t] = view.getUint32(i + t * 4, false);
+        for (let t = 16; t < 64; t++) W[t] = (gamma1(W[t - 2]) + W[t - 7] + gamma0(W[t - 15]) + W[t - 16]) >>> 0;
+
+        let [a, b, c, d, e, f, g, h] = H;
+        for (let t = 0; t < 64; t++) {
+          const T1 = (h + sigma1(e) + ch(e, f, g) + K[t] + W[t]) >>> 0;
+          const T2 = (sigma0(a) + maj(a, b, c)) >>> 0;
+          h = g; g = f; f = e; e = (d + T1) >>> 0;
+          d = c; c = b; b = a; a = (T1 + T2) >>> 0;
+        }
+        H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0;
+        H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
+        H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0;
+        H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+      }
+
+      const res = new Uint8Array(32);
+      const rview = new DataView(res.buffer);
+      for (let i = 0; i < 8; i++) rview.setUint32(i * 4, H[i], false);
+      return res;
+    }
+
+    function hmacSha256(key, data) {
+      let k = key;
+      if (k.length > 64) k = sha256Sync(k);
+      const padKey = new Uint8Array(64);
+      padKey.set(k);
+      const ipad = new Uint8Array(64);
+      const opad = new Uint8Array(64);
+      for (let i = 0; i < 64; i++) {
+        ipad[i] = padKey[i] ^ 0x36;
+        opad[i] = padKey[i] ^ 0x5c;
+      }
+      const inner = new Uint8Array(64 + data.length);
+      inner.set(ipad); inner.set(data, 64);
+      const innerHash = sha256Sync(inner);
+      const outer = new Uint8Array(64 + 32);
+      outer.set(opad); outer.set(innerHash, 64);
+      return sha256Sync(outer);
+    }
+
+    function pbkdf2Sync(passBytes, salt, iterations, keyLen) {
+      const l = Math.ceil(keyLen / 32);
+      const r = keyLen - (l - 1) * 32;
+      const derived = new Uint8Array(keyLen);
+
+      for (let i = 1; i <= l; i++) {
+        const iblock = new Uint8Array(salt.length + 4);
+        iblock.set(salt);
+        new DataView(iblock.buffer).setUint32(salt.length, i, false);
+        let u = hmacSha256(passBytes, iblock);
+        const t = new Uint8Array(u);
+
+        for (let iter = 1; iter < iterations; iter++) {
+          u = hmacSha256(passBytes, u);
+          for (let j = 0; j < 32; j++) t[j] ^= u[j];
+        }
+        const copyLen = (i === l) ? r : 32;
+        derived.set(t.subarray(0, copyLen), (i - 1) * 32);
+      }
+      return derived;
+    }
+
+    function decryptPayload(payload, keyStr) {
+      const salt = b64ToBuf(payload.salt);
+      const nonce = b64ToBuf(payload.nonce);
+      const ciphertext = b64ToBuf(payload.ciphertext);
+      const tag = b64ToBuf(payload.tag);
+
+      const passBytes = new TextEncoder().encode(keyStr);
+      const derived = pbkdf2Sync(passBytes, salt, 10000, 64);
+      const encKey = derived.subarray(0, 32);
+      const macKey = derived.subarray(32, 64);
+
+      // Verify HMAC
+      const authData = new Uint8Array(salt.length + nonce.length + ciphertext.length);
+      authData.set(salt);
+      authData.set(nonce, salt.length);
+      authData.set(ciphertext, salt.length + nonce.length);
+      const computedTag = hmacSha256(macKey, authData);
+
+      let tagMatch = (tag.length === computedTag.length);
+      for (let i = 0; i < tag.length; i++) {
+        if (tag[i] !== computedTag[i]) tagMatch = false;
+      }
+      if (!tagMatch) throw new Error("認証タグの不一致：パスキーが誤っているか改ざんされています。");
+
+      // SHA-256 CTR Decrypt
+      const plaintext = new Uint8Array(ciphertext.length);
+      let counter = 0;
+      for (let offset = 0; offset < ciphertext.length; offset += 32) {
+        const counterBytes = new Uint8Array(4);
+        new DataView(counterBytes.buffer).setUint32(0, counter, false);
+        const blockInput = new Uint8Array(encKey.length + nonce.length + 4);
+        blockInput.set(encKey);
+        blockInput.set(nonce, encKey.length);
+        blockInput.set(counterBytes, encKey.length + nonce.length);
+        const keystream = sha256Sync(blockInput);
+
+        const chunkLen = Math.min(32, ciphertext.length - offset);
+        for (let i = 0; i < chunkLen; i++) {
+          plaintext[offset + i] = ciphertext[offset + i] ^ keystream[i];
+        }
+        counter++;
+      }
+      return JSON.parse(new TextDecoder().decode(plaintext));
+    }
+
+    // -------------------------------------------------------------
+    // レンダリング＆ビュー切替ロジック (縦ツリー ⇄ 放射マップ)
+    // -------------------------------------------------------------
+    let mapData = null;
+    let currentView = "tree"; // "tree" | "radial"
+
+    function init() {
+      const hash = window.location.hash;
+      const match = hash.match(/#.*key=([A-Za-z0-9_-]+)/);
+      if (!match) {
+        document.getElementById("lock-error").textContent = "URL末尾に #key=秘密鍵 を付与してアクセスしてください。";
+        return;
+      }
+
+      const keyStr = match[1];
+      try {
+        mapData = decryptPayload(ENCRYPTED_PAYLOAD, keyStr);
+        document.getElementById("lock-screen").style.display = "none";
+        render();
+      } catch (err) {
+        console.error(err);
+        document.getElementById("lock-error").textContent = "復号エラー: " + err.message;
+      }
+
+      document.getElementById("view-toggle").addEventListener("click", () => {
+        currentView = (currentView === "tree") ? "radial" : "tree";
+        document.getElementById("toggle-icon").textContent = (currentView === "tree") ? "🌿" : "🕸️";
+        document.getElementById("toggle-label").textContent = (currentView === "tree") ? "縦ツリー" : "放射マップ";
+        render();
+      });
+
+      window.addEventListener("resize", () => render());
+    }
+
+    function render() {
+      if (!mapData) return;
+      const svg = document.getElementById("canvas");
+      svg.innerHTML = "";
+      if (currentView === "tree") {
+        renderVerticalTree(svg, mapData);
+      } else {
+        renderRadialMap(svg, mapData);
+      }
+    }
+
+    // 1. 縦ツリーレイアウト（スマホ縦1画面に最適化）
+    function renderVerticalTree(svg, root) {
+      const container = document.getElementById("canvas-container");
+      const W = container.clientWidth || 360;
+      const H = container.clientHeight || 640;
+
+      // 階層ごとのフラット化とY座標配置
+      const levels = [];
+      function traverse(node, depth) {
+        if (!levels[depth]) levels[depth] = [];
+        levels[depth].push(node);
+        if (node.children) node.children.forEach(c => traverse(c, depth + 1));
+      }
+      traverse(root, 0);
+
+      const maxDepth = levels.length;
+      const rowHeight = (H - 40) / Math.max(maxDepth, 3);
+
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+      // 座標割り当て
+      levels.forEach((nodesInLevel, depth) => {
+        const y = 30 + depth * rowHeight + rowHeight / 2;
+        const count = nodesInLevel.length;
+        nodesInLevel.forEach((node, idx) => {
+          node.y = y;
+          node.x = (W / (count + 1)) * (idx + 1);
+          node.depth = depth;
+        });
+      });
+
+      // リンク描画 (ベジェ曲線)
+      function drawLinks(node) {
+        if (!node.children) return;
+        node.children.forEach(child => {
+          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          const midY = (node.y + child.y) / 2;
+          const d = `M ${node.x} ${node.y + 16} C ${node.x} ${midY}, ${child.x} ${midY}, ${child.x} ${child.y - 16}`;
+          path.setAttribute("d", d);
+          path.setAttribute("class", "link-path");
+          svg.appendChild(path);
+          drawLinks(child);
+        });
+      }
+      drawLinks(root);
+
+      // ノード描画
+      function drawNodes(node) {
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        const depthClass = node.depth === 0 ? "node-root" : (node.depth === 1 ? "node-l1" : "node-l2");
+        g.setAttribute("class", `node-group ${depthClass}`);
+
+        const paddingX = node.depth === 0 ? 18 : 12;
+        const paddingY = node.depth === 0 ? 10 : 7;
+        const fontSize = node.depth === 0 ? 15 : (node.depth === 1 ? 13 : 11.5);
+        const estWidth = Math.max(node.text.length * (fontSize * 0.9) + paddingX * 2, 70);
+        const estHeight = fontSize + paddingY * 2;
+
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", node.x - estWidth / 2);
+        rect.setAttribute("y", node.y - estHeight / 2);
+        rect.setAttribute("width", estWidth);
+        rect.setAttribute("height", estHeight);
+        rect.setAttribute("class", "node-bg");
+
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", node.x);
+        text.setAttribute("y", node.y);
+        text.setAttribute("class", "node-text");
+        text.textContent = node.text;
+
+        g.appendChild(rect);
+        g.appendChild(text);
+        svg.appendChild(g);
+
+        if (node.children) node.children.forEach(drawNodes);
+      }
+      drawNodes(root);
+    }
+
+    // 2. 放射状マインドマップレイアウト（中心から円形展開）
+    function renderRadialMap(svg, root) {
+      const container = document.getElementById("canvas-container");
+      const W = container.clientWidth || 360;
+      const H = container.clientHeight || 640;
+      const centerX = W / 2;
+      const centerY = H / 2;
+      const radiusBase = Math.min(W, H) * 0.38;
+
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+      root.x = centerX;
+      root.y = centerY;
+      root.depth = 0;
+
+      const l1Children = root.children || [];
+      const l1Count = l1Children.length;
+
+      l1Children.forEach((child, i) => {
+        const angle = (2 * Math.PI / l1Count) * i - Math.PI / 2;
+        child.x = centerX + Math.cos(angle) * (radiusBase * 0.65);
+        child.y = centerY + Math.sin(angle) * (radiusBase * 0.65);
+        child.depth = 1;
+
+        const l2Children = child.children || [];
+        const l2Count = l2Children.length;
+        l2Children.forEach((l2Child, j) => {
+          const subSpread = 0.5; // 分散角
+          const subAngle = angle + (l2Count > 1 ? (j - (l2Count - 1) / 2) * subSpread : 0);
+          l2Child.x = child.x + Math.cos(subAngle) * (radiusBase * 0.55);
+          l2Child.y = child.y + Math.sin(subAngle) * (radiusBase * 0.55);
+          l2Child.depth = 2;
+        });
+      });
+
+      // リンク描画
+      function drawRadialLinks(node) {
+        if (!node.children) return;
+        node.children.forEach(child => {
+          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          const d = `M ${node.x} ${node.y} Q ${ (node.x + child.x) / 2 } ${ (node.y + child.y) / 2 }, ${child.x} ${child.y}`;
+          path.setAttribute("d", d);
+          path.setAttribute("class", "link-path");
+          svg.appendChild(path);
+          drawRadialLinks(child);
+        });
+      }
+      drawRadialLinks(root);
+
+      // ノード描画
+      function drawRadialNodes(node) {
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        const depthClass = node.depth === 0 ? "node-root" : (node.depth === 1 ? "node-l1" : "node-l2");
+        g.setAttribute("class", `node-group ${depthClass}`);
+
+        const fontSize = node.depth === 0 ? 14 : (node.depth === 1 ? 12 : 10.5);
+        const estWidth = node.text.length * (fontSize * 0.85) + 16;
+        const estHeight = fontSize + 12;
+
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", node.x - estWidth / 2);
+        rect.setAttribute("y", node.y - estHeight / 2);
+        rect.setAttribute("width", estWidth);
+        rect.setAttribute("height", estHeight);
+        rect.setAttribute("class", "node-bg");
+
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", node.x);
+        text.setAttribute("y", node.y);
+        text.setAttribute("class", "node-text");
+        text.textContent = node.text;
+
+        g.appendChild(rect);
+        g.appendChild(text);
+        svg.appendChild(g);
+
+        if (node.children) node.children.forEach(drawRadialNodes);
+      }
+      drawRadialNodes(root);
+    }
+
+    window.addEventListener("DOMContentLoaded", init);
+  </script>
+</body>
+</html>
