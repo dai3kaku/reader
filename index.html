@@ -5,53 +5,87 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reader</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <style>
         body { 
-            font-family: sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
             margin: 0; 
-            padding: 15px; 
+            padding: 16px; 
             display: flex; 
             flex-direction: column; 
             min-height: 100vh;
             box-sizing: border-box;
             background-color: #fff;
+            color: #1a1a1a;
         }
         /* 出力エリア（上部） */
         #o { 
-            font-size: 1.1rem; 
-            line-height: 1.7; 
+            font-size: 1.12rem; 
+            line-height: 1.75; 
             color: #1a1a1a;
             flex-grow: 1;
-            margin-bottom: 20px;
+            margin-bottom: 24px;
+            word-break: break-word;
         }
-        #o h1, #o h2, #o h3 { color: #0078d4; margin-top: 1em; }
-        #o ul, #o ol { padding-left: 20px; }
-        #o blockquote { border-left: 4px solid #ccc; margin: 0; padding-left: 10px; color: #666; }
+        #o h1, #o h2, #o h3, #o h4 { color: #0078d4; margin-top: 1.2em; margin-bottom: 0.5em; line-height: 1.4; }
+        #o ul, #o ol { padding-left: 22px; }
+        #o li { margin-bottom: 0.35em; }
+        #o blockquote { border-left: 4px solid #0078d4; margin: 0.8em 0; padding: 4px 0 4px 12px; color: #333; background: #f8fbff; border-radius: 0 6px 6px 0; }
+        #o table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 0.95rem; }
+        #o th, #o td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        #o th { background-color: #f3f6f9; color: #0078d4; }
+        #o code { background-color: #f3f4f6; padding: 2px 5px; border-radius: 4px; font-family: inherit; }
 
-        /* 操作エリア（下部） */
+        /* Mermaid無音画像コンテナ */
+        .mermaid-wrap {
+            margin: 14px 0;
+            padding: 10px;
+            background: #fafafa;
+            border: 1px solid #eaeaea;
+            border-radius: 8px;
+            text-align: center;
+            overflow-x: auto;
+        }
+        .mermaid-img {
+            max-width: 100%;
+            height: auto;
+            display: inline-block;
+        }
+
+        /* 操作エリア（下部固定・TTS非干渉設計） */
         .controls {
             position: sticky;
             bottom: 0;
-            background: #fff;
-            padding-top: 10px;
+            background: rgba(255, 255, 255, 0.96);
+            backdrop-filter: blur(4px);
+            padding: 10px 0 6px 0;
             border-top: 1px solid #eee;
+        }
+        #manual-panel {
+            display: none;
+            margin-bottom: 8px;
+        }
+        #manual-panel.open {
+            display: block;
         }
         textarea { 
             width: 100%; 
-            height: 60px; 
+            height: 90px; 
             padding: 10px; 
-            border: 2px solid #eee; 
+            border: 2px solid #ddd; 
             border-radius: 8px; 
-            font-size: 16px; 
+            font-size: 15px; 
             box-sizing: border-box; 
             outline: none; 
             background-color: #fafafa;
-            margin-bottom: 10px;
         }
-        /* 貼り付けボタンのスタイル */
+        .btn-row {
+            display: flex;
+            gap: 8px;
+        }
         #paste-btn {
-            width: 100%;
-            padding: 12px;
+            flex: 1;
+            padding: 13px;
             background-color: #0078d4;
             color: white;
             border: none;
@@ -61,43 +95,226 @@
             cursor: pointer;
         }
         #paste-btn:active { background-color: #005a9e; }
+        #toggle-manual-btn {
+            padding: 0 14px;
+            background-color: #f0f2f5;
+            color: #444;
+            border: 1px solid #dcdcdc;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
 
 <div id="o"></div>
 
-<div class="controls">
-    <textarea id="i" placeholder="手動入力・確認用"></textarea>
-    <button id="paste-btn">クリップボードから貼り付け</button>
+<div class="controls" aria-hidden="true">
+    <div id="manual-panel">
+        <textarea id="i" placeholder="手動入力・確認用"></textarea>
+    </div>
+    <div class="btn-row">
+        <button id="paste-btn">クリップボードから貼り付け</button>
+        <button id="toggle-manual-btn" title="手動入力欄を開閉">✎</button>
+    </div>
 </div>
 
 <script>
     const i = document.getElementById('i');
     const o = document.getElementById('o');
     const btn = document.getElementById('paste-btn');
+    const toggleBtn = document.getElementById('toggle-manual-btn');
+    const manualPanel = document.getElementById('manual-panel');
 
-    // テキストを反映してマークダウン変換する共通関数
-    function updateContent(text) {
-        i.value = text;
-        o.innerHTML = marked.parse(text);
-        window.scrollTo(0, 0); // 貼り付けたら上に戻る
+    if (window.mermaid) {
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'default',
+            securityLevel: 'strict'
+        });
     }
 
-    // ボタンが押された時の処理
+    /**
+     * Edge TTS（音声読み上げ）向けにノイズを除去し、Mermaidブロックを分離する純粋関数
+     */
+    function cleanseForTTS(rawText) {
+        if (!rawText) return { cleanedMarkdown: '', mermaidBlocks: [] };
+
+        let text = rawText.replace(/\r\n/g, '\n');
+        const mermaidBlocks = [];
+
+        // 1. Mermaidコードブロック（3連〜4連以上のバッククォート、開始・終了の個数不一致にも対応）を抽出してプレースホルダーへ退避
+        text = text.replace(/^[ \t]*`{3,}[ \t]*mermaid[ \t]*\n([\s\S]*?)^[ \t]*`{3,}[ \t]*$/gim, (_, code) => {
+            const idx = mermaidBlocks.length;
+            mermaidBlocks.push(code.trim());
+            return `\n\n<div class="mermaid-slot" data-mermaid-idx="${idx}"></div>\n\n`;
+        });
+
+        // 2. 4連以上のバッククォートで囲まれたコードブロック（内部に3連を含むケース等）を完全除去
+        text = text.replace(/(`{4,})[^\n]*\n[\s\S]*?\1/g, '\n');
+
+        // 3. 3連以上のバッククォートで囲まれた通常コードブロックを完全除去
+        text = text.replace(/(`{3,})[^\n]*\n[\s\S]*?\1/g, '\n');
+
+        // 開始と終了でバッククォート数が不一致（4連開始・3連終了など）のコードブロックも除去
+        text = text.replace(/^[ \t]*`{3,}[^\n]*\n[\s\S]*?^[ \t]*`{3,}[ \t]*$/gm, '\n');
+
+        // 閉じ忘れた単独のコードブロック開始・終了行（行頭の ```... / ````...）があれば除去
+        text = text.replace(/^[ \t]*`{3,}[^\n]*$/gm, '');
+
+        // 4. Antigravity 2.0 推論ログ・ツール実行履歴行の除去
+        text = text.replace(
+            /^[ \t]*(?:Analyzed|Viewed|Edited|Created|Deleted|Ran|Searched|Thought(?: for)?|Read|Wrote|Listed|Found|Updated|Checked|Executed|Invoked)\b.*$/gm,
+            ''
+        );
+        // 単一行のファイル名＋行番号ログ（例: SKILL.md:L1-28）を除去
+        text = text.replace(/^[ \t]*[^\s]+:L\d+(?:-L?\d+)?[ \t]*$/gm, '');
+
+        // 5. Markdown画像・リンク・WikiLink・生URL・パーセントエンコード塊の整形
+        // 画像記法 ![alt](url) は除去
+        text = text.replace(/!\[([^\]]*)\]\([^)]+\)/g, '');
+        // リンク記法 [表示名](url) は表示名のみ残す
+        text = text.replace(/\[([^\]]+)\]\((?:https?|file|conversation):\/\/[^)]+\)/g, '$1');
+        text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+        // Obsidian WikiLink [[path/to/file|label]] -> label, [[path/to/file]] -> file
+        text = text.replace(/\[\[(?:[^\]|]+\|)?([^\]]+)\]\]/g, '$1');
+        // 裸のURL（https://..., file:///...）を除去
+        text = text.replace(/(?:https?|file):\/\/[^\s)\]>]+/g, '');
+        // 連続するURLパーセントエンコード文字列（%E3%81...）を除去
+        text = text.replace(/(?:%[0-9A-Fa-f]{2}){2,}(?:[^\s)]*)?/g, '');
+
+        // 6. Callout宣言・テーブル記号・装飾記号の無害化
+        // Obsidian / GitHub Callout ([!NOTE], [!IMPORTANT] 等) のタグのみ除去
+        text = text.replace(/^([ \t]*>[ \t]*)\[![A-Za-z0-9_-]+\][-+]?[ \t]*/gm, '$1');
+        // 全角パイプ「｜」はTTSが「縦線」と読まないよう読点スペースへ置換
+        text = text.replace(/｜/g, '、 ');
+        // 矢印記号（==>, -->, -.->, ➔ 等）を読点・空白へ置換
+        text = text.replace(/(?:==>|-->|-\.->|<-->|==>|➔|⇒|->)/g, ' 、 ');
+        // 水平線（---, ***, ___）を除去（テーブルの区切り行 | :--- | は維持してmarkedにテーブル変換させる）
+        text = text.replace(/^[ \t]*(?:[-*_][ \t]*){3,}$/gm, '');
+
+        // 7. インラインコードのバッククォート除去と「アクサングラーブ（`）」の100%根絶
+        text = text.replace(/`([^`\n]+)`/g, '$1');
+        text = text.replace(/[`´]/g, '');
+
+        // 連続空行の圧縮
+        text = text.replace(/\n{3,}/g, '\n\n').trim();
+
+        return { cleanedMarkdown: text, mermaidBlocks };
+    }
+
+    /**
+     * 退避したMermaidコードをSVGに変換し、TTSが100%無音スキップする <img alt=""> (Data URI) として描画
+     */
+    async function renderMermaidAsSilentImages(mermaidBlocks) {
+        if (!window.mermaid || !mermaidBlocks.length) return;
+
+        const slots = o.querySelectorAll('.mermaid-slot');
+        for (const slot of slots) {
+            const idx = Number(slot.getAttribute('data-mermaid-idx'));
+            const code = mermaidBlocks[idx];
+            if (!code) {
+                slot.remove();
+                continue;
+            }
+            try {
+                const renderId = 'mermaid-svg-' + Date.now() + '-' + idx;
+                const { svg } = await mermaid.render(renderId, code);
+                const wrap = document.createElement('div');
+                wrap.className = 'mermaid-wrap';
+                wrap.setAttribute('aria-hidden', 'true');
+
+                const img = document.createElement('img');
+                img.className = 'mermaid-img';
+                img.setAttribute('alt', '');
+                img.setAttribute('role', 'presentation');
+                img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+
+                wrap.appendChild(img);
+                slot.replaceWith(wrap);
+            } catch (err) {
+                // 構文エラー時はTTSがエラー文を読み上げないよう静かにスロットを除去
+                const errNode = document.getElementById('dmermaid-svg-' + idx);
+                if (errNode) errNode.remove();
+                slot.remove();
+            }
+        }
+    }
+
+    /**
+     * DOM変換後の残存テーブルパイプ等の最終サニタイズ
+     */
+    function sanitizeRenderedDOM() {
+        const walker = document.createTreeWalker(o, NodeFilter.SHOW_TEXT, null);
+        const textNodes = [];
+        while (walker.nextNode()) {
+            textNodes.push(walker.currentNode);
+        }
+        for (const node of textNodes) {
+            if (node.nodeValue) {
+                node.nodeValue = node.nodeValue
+                    .replace(/[`´]/g, '')
+                    .replace(/\|/g, ' 、 ');
+            }
+        }
+    }
+
+    // テキストを反映してマークダウン変換する共通関数
+    async function updateContent(rawText, syncTextarea = false) {
+        const { cleanedMarkdown, mermaidBlocks } = cleanseForTTS(rawText);
+        if (syncTextarea) {
+            i.value = rawText;
+        } else {
+            // Edge TTSが下部textareaを2周目として読み上げるのを防ぐため空にする
+            i.value = '';
+            manualPanel.classList.remove('open');
+        }
+
+        o.innerHTML = marked.parse(cleanedMarkdown);
+        sanitizeRenderedDOM();
+        await renderMermaidAsSilentImages(mermaidBlocks);
+
+        try {
+            localStorage.setItem('reader_last_raw_text', rawText);
+        } catch (_) {}
+
+        window.scrollTo(0, 0);
+    }
+
+    // 貼り付けボタン押下時の処理
     btn.addEventListener('click', async () => {
         try {
-            // クリップボードからテキストを読み取る
             const text = await navigator.clipboard.readText();
-            updateContent(text);
+            await updateContent(text, false);
         } catch (err) {
             alert('クリップボードの読み取りに失敗しました。ブラウザの設定で許可してください。');
         }
     });
 
-    // 手動入力時も反映
+    // 手動入力欄の開閉トグル
+    toggleBtn.addEventListener('click', () => {
+        const isOpen = manualPanel.classList.toggle('open');
+        if (isOpen && !i.value) {
+            try {
+                i.value = localStorage.getItem('reader_last_raw_text') || '';
+            } catch (_) {}
+        }
+    });
+
+    // 手動入力時もリアルタイム反映
     i.addEventListener('input', () => {
-        o.innerHTML = marked.parse(i.value);
+        updateContent(i.value, true);
+    });
+
+    // リロード時の復元
+    window.addEventListener('DOMContentLoaded', () => {
+        try {
+            const saved = localStorage.getItem('reader_last_raw_text');
+            if (saved) {
+                updateContent(saved, false);
+            }
+        } catch (_) {}
     });
 </script>
 
